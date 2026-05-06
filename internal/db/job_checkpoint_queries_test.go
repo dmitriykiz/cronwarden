@@ -1,65 +1,53 @@
 package db_test
 
 import (
-	"database/sql"
 	"testing"
 
-	"github.com/cronwarden/cronwarden/internal/db"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpsertAndGetJobCheckpoint(t *testing.T) {
-	conn := tempDB(t)
+	db := tempDB(t)
 
-	if err := db.UpsertJobCheckpoint(conn, "backup", "row-42"); err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
+	err := db.UpsertJobCheckpoint("backup-job", `{"last_file": "data.tar.gz", "offset": 1024}`)
+	require.NoError(t, err)
 
-	cp, err := db.GetJobCheckpoint(conn, "backup")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if cp.JobName != "backup" {
-		t.Errorf("job_name: want backup, got %s", cp.JobName)
-	}
-	if cp.Marker != "row-42" {
-		t.Errorf("marker: want row-42, got %s", cp.Marker)
-	}
+	cp, err := db.GetJobCheckpoint("backup-job")
+	require.NoError(t, err)
+	assert.Equal(t, "backup-job", cp.JobName)
+	assert.JSONEq(t, `{"last_file": "data.tar.gz", "offset": 1024}`, cp.Payload)
+	assert.False(t, cp.UpdatedAt.IsZero())
 }
 
 func TestUpsertJobCheckpoint_Replaces(t *testing.T) {
-	conn := tempDB(t)
+	db := tempDB(t)
 
-	_ = db.UpsertJobCheckpoint(conn, "sync", "v1")
-	_ = db.UpsertJobCheckpoint(conn, "sync", "v2")
+	require.NoError(t, db.UpsertJobCheckpoint("sync-job", `{"page": 1}`))
+	require.NoError(t, db.UpsertJobCheckpoint("sync-job", `{"page": 5}`))
 
-	cp, err := db.GetJobCheckpoint(conn, "sync")
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if cp.Marker != "v2" {
-		t.Errorf("expected marker v2, got %s", cp.Marker)
-	}
+	cp, err := db.GetJobCheckpoint("sync-job")
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"page": 5}`, cp.Payload)
 }
 
 func TestGetJobCheckpoint_NotFound(t *testing.T) {
-	conn := tempDB(t)
+	db := tempDB(t)
 
-	_, err := db.GetJobCheckpoint(conn, "nonexistent")
-	if err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows, got %v", err)
-	}
+	_, err := db.GetJobCheckpoint("nonexistent-job")
+	require.Error(t, err)
+	assert.True(t, isNoRows(err))
 }
 
 func TestDeleteJobCheckpoint(t *testing.T) {
-	conn := tempDB(t)
+	db := tempDB(t)
 
-	_ = db.UpsertJobCheckpoint(conn, "cleanup", "done")
-	if err := db.DeleteJobCheckpoint(conn, "cleanup"); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
+	require.NoError(t, db.UpsertJobCheckpoint("cleanup-job", `{"done": true}`))
 
-	_, err := db.GetJobCheckpoint(conn, "cleanup")
-	if err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows after delete, got %v", err)
-	}
+	err := db.DeleteJobCheckpoint("cleanup-job")
+	require.NoError(t, err)
+
+	_, err = db.GetJobCheckpoint("cleanup-job")
+	require.Error(t, err)
+	assert.True(t, isNoRows(err))
 }
