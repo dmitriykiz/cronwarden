@@ -1,67 +1,29 @@
 package api
 
-import (
-	"encoding/json"
-	"net/http"
-	"strconv"
+import "net/http"
 
-	"github.com/cronwarden/internal/db"
-)
-
-// handleNextRun returns the next scheduled run time for a named job.
-func (s *Server) handleNextRun(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	name := r.URL.Query().Get("job")
-	if name == "" {
-		http.Error(w, "missing job query parameter", http.StatusBadRequest)
-		return
-	}
-
-	next, err := s.scheduler.NextRun(name)
-	if err != nil {
-		http.Error(w, "job not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"job":      name,
-		"next_run": next.UTC().Format("2006-01-02T15:04:05Z"),
-	})
+// registerRoutes attaches all HTTP handlers to the server's mux.
+func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.HandleFunc("/runs", s.handleListRuns)
+	s.mux.HandleFunc("/runs/", s.handleListRunsByJob)
+	s.mux.HandleFunc("/stats", s.handleStats)
 }
 
-// handleJobStats returns aggregate statistics for a named job.
-func (s *Server) handleJobStats(w http.ResponseWriter, r *http.Request) {
+// handleListRunsByJob handles GET /runs/{job_name} and returns runs filtered
+// by job name using the last path segment.
+func (s *Server) handleListRunsByJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	name := r.URL.Query().Get("job")
-	if name == "" {
-		http.Error(w, "missing job query parameter", http.StatusBadRequest)
+	// Extract job name from path: /runs/<name>
+	jobName := r.URL.Path[len("/runs/"):]
+	if jobName == "" {
+		http.Error(w, "job name required", http.StatusBadRequest)
 		return
 	}
 
-	limitStr := r.URL.Query().Get("limit")
-	limit := 100
-	if limitStr != "" {
-		if v, err := strconv.Atoi(limitStr); err == nil && v > 0 {
-			limit = v
-		}
-	}
-
-	runs, err := db.ListJobRunsByName(s.db, name, limit)
-	if err != nil {
-		http.Error(w, "failed to query runs", http.StatusInternalServerError)
-		return
-	}
-
-	stats := computeStats(name, runs)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	s.writeJobRuns(w, r, jobName)
 }
