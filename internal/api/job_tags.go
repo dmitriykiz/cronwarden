@@ -18,6 +18,9 @@ type tagResponse struct {
 	Tags    []string `json:"tags"`
 }
 
+// newJobTagsHandler returns an HTTP handler for managing tags associated with a job.
+// It supports GET (list tags), PUT (replace tags), and DELETE (remove all tags)
+// on the URL pattern /jobs/{name}/tags.
 func newJobTagsHandler(sqlDB *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// URL: /jobs/{name}/tags
@@ -27,6 +30,10 @@ func newJobTagsHandler(sqlDB *sql.DB) http.HandlerFunc {
 			return
 		}
 		jobName := parts[1]
+		if jobName == "" {
+			writeError(w, http.StatusBadRequest, "job name must not be empty")
+			return
+		}
 
 		switch r.Method {
 		case http.MethodGet:
@@ -45,6 +52,9 @@ func newJobTagsHandler(sqlDB *sql.DB) http.HandlerFunc {
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid JSON")
 				return
+			}
+			if req.Tags == nil {
+				req.Tags = []string{}
 			}
 			if err := db.SetJobTags(sqlDB, jobName, req.Tags); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to set tags")
