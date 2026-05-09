@@ -8,6 +8,8 @@ import (
 	"github.com/cronwarden/cronwarden/internal/db"
 )
 
+// newJobRunOutputHandler returns an HTTP handler for managing the stdout/stderr
+// output associated with a specific job run. Supports GET, PUT, and DELETE.
 func newJobRunOutputHandler(database *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		runID, ok := parseID(w, r, "runID")
@@ -35,6 +37,10 @@ func newJobRunOutputHandler(database *sql.DB) http.HandlerFunc {
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid JSON")
+				return
+			}
+			if body.Stdout == "" && body.Stderr == "" {
+				writeError(w, http.StatusBadRequest, "at least one of 'stdout' or 'stderr' must be provided")
 				return
 			}
 			if err := db.UpsertJobRunOutput(database, runID, body.Stdout, body.Stderr); err != nil {
