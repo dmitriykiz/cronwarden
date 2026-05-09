@@ -11,6 +11,10 @@ import (
 
 // newJobLabelsHandler returns an http.Handler for GET/PUT/DELETE on
 // /jobs/{name}/labels.
+//
+// GET    /jobs/{name}/labels  - returns all labels for the job as a JSON object
+// PUT    /jobs/{name}/labels  - replaces all labels with the provided JSON object
+// DELETE /jobs/{name}/labels  - removes all labels for the job
 func newJobLabelsHandler(sqlDB *sql.DB) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Extract job name from path: /jobs/<name>/labels
@@ -20,6 +24,10 @@ func newJobLabelsHandler(sqlDB *sql.DB) http.Handler {
 			return
 		}
 		jobName := parts[1]
+		if jobName == "" {
+			writeError(w, http.StatusBadRequest, "job name must not be empty")
+			return
+		}
 
 		switch r.Method {
 		case http.MethodGet:
